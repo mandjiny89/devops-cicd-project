@@ -1,0 +1,47 @@
+- name: Install Docker and AWS CLI
+  ansible.builtin.dnf:
+    name:
+      - docker
+      - awscli2
+    state: present
+
+- name: Enable and start Docker
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Login to ECR
+  ansible.builtin.shell: |
+    set -o pipefail
+    aws ecr get-login-password --region {{ aws_region }} |
+    docker login --username AWS --password-stdin {{ ecr_registry }}
+  args:
+    executable: /bin/bash
+  changed_when: false
+  no_log: true
+
+- name: Pull application image
+  ansible.builtin.command: docker pull {{ app_image }}
+  changed_when: true
+
+- name: Remove previous application container
+  ansible.builtin.command: docker rm -f devops-app
+  register: removed
+  failed_when: false
+  changed_when: removed.rc == 0
+
+- name: Run application
+  ansible.builtin.command: >-
+    docker run -d --name devops-app --restart unless-stopped
+    -p 80:8000 -e APP_ENV={{ app_environment }} {{ app_image }}
+  changed_when: true
+
+- name: Wait for health endpoint
+  ansible.builtin.uri:
+    url: http://127.0.0.1/health
+    status_code: 200
+  register: health
+  retries: 15
+  delay: 4
+  until: health.status == 200

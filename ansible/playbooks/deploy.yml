@@ -1,0 +1,6 @@
+- name: Configure and deploy application nodes
+  hosts: role_app
+  become: true
+  serial: 1
+  roles:
+    - role: app
