@@ -7,14 +7,12 @@ on:
     paths:
       - "terraform/**"
       - ".github/workflows/terraform-dev.yml"
-
   pull_request:
     branches:
       - main
     paths:
       - "terraform/**"
       - ".github/workflows/terraform-dev.yml"
-
   workflow_dispatch:
 
 permissions:
@@ -27,7 +25,6 @@ concurrency:
 
 jobs:
   terraform:
-    name: Terraform Validate and Plan
     runs-on: ubuntu-latest
 
     defaults:
@@ -50,17 +47,26 @@ jobs:
       - name: Verify AWS identity
         run: aws sts get-caller-identity
 
+      - name: Generate ephemeral SSH key pair
+        run: |
+          mkdir -p "$RUNNER_TEMP/ssh"
+          ssh-keygen -t ed25519 -N "" -f "$RUNNER_TEMP/ssh/id_ed25519"
+          echo "TF_VAR_ssh_public_key=$(cat "$RUNNER_TEMP/ssh/id_ed25519.pub")" >> "$GITHUB_ENV"
+
+      - name: Detect GitHub runner public IP
+        run: |
+          RUNNER_IP="$(curl -fsSL https://checkip.amazonaws.com | tr -d '\n')"
+          echo "GitHub runner IP: ${RUNNER_IP}"
+          echo "TF_VAR_github_runner_cidr=${RUNNER_IP}/32" >> "$GITHUB_ENV"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: "1.16.1"
           terraform_wrapper: false
 
-      - name: Terraform version
-        run: terraform version
-
       - name: Terraform format check
-        run: terraform fmt -check -recursive
+        run: terraform fmt -check -recursive ../..
 
       - name: Terraform init
         run: terraform init -input=false
@@ -73,3 +79,31 @@ jobs:
 
       - name: Terraform plan summary
         run: terraform show -no-color tfplan
+
+      - name: Terraform apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Terraform outputs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: terraform output
+
+      - name: Wait for ASG instances
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          ASG_NAME="$(terraform output -raw asg_name)"
+          for i in {1..30}; do
+            COUNT="$(aws autoscaling describe-auto-scaling-groups               --auto-scaling-group-names "$ASG_NAME"               --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`]|length(@)'               --output text)"
+            echo "InService instances: ${COUNT}"
+            if [ "${COUNT}" -ge 2 ]; then
+              exit 0
+            fi
+            sleep 20
+          done
+          exit 1
+
+      - name: Show ALB URL
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          ALB_DNS="$(terraform output -raw alb_dns_name)"
+          echo "Application URL: http://${ALB_DNS}"

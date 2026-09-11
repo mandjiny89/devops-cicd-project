@@ -1,6 +1,48 @@
-# Infrastructure resources will be added in the next stage.
-#
-# This first GitHub Actions stage intentionally contains no AWS resources.
-# Its purpose is to validate:
-#   GitHub Actions -> GitHub OIDC -> AWS STS -> IAM role
-#   Terraform -> S3 remote backend and state locking
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+module "vpc" {
+  source = "../../modules/vpc"
+
+  project_name         = var.project_name
+  environment          = var.environment
+  vpc_cidr             = var.vpc_cidr
+  availability_zones   = slice(data.aws_availability_zones.available.names, 0, 2)
+  public_subnet_cidrs  = var.public_subnet_cidrs
+  private_subnet_cidrs = var.private_subnet_cidrs
+}
+
+module "security" {
+  source = "../../modules/security"
+
+  project_name       = var.project_name
+  environment        = var.environment
+  vpc_id             = module.vpc.vpc_id
+  github_runner_cidr = var.github_runner_cidr
+}
+
+module "alb" {
+  source = "../../modules/alb"
+
+  project_name          = var.project_name
+  environment           = var.environment
+  vpc_id                = module.vpc.vpc_id
+  public_subnet_ids     = module.vpc.public_subnet_ids
+  alb_security_group_id = module.security.alb_security_group_id
+}
+
+module "asg" {
+  source = "../../modules/asg"
+
+  project_name          = var.project_name
+  environment           = var.environment
+  public_subnet_ids     = module.vpc.public_subnet_ids
+  app_security_group_id = module.security.app_security_group_id
+  target_group_arn      = module.alb.target_group_arn
+  instance_type         = var.instance_type
+  min_size              = var.asg_min_size
+  desired_capacity      = var.asg_desired_capacity
+  max_size              = var.asg_max_size
+  ssh_public_key        = var.ssh_public_key
+}

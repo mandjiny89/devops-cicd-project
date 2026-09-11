@@ -1,0 +1,21 @@
+plugin: amazon.aws.aws_ec2
+
+regions:
+  - eu-west-2
+
+filters:
+  tag:Project: devops-cicd-project
+  tag:Environment: dev
+  tag:Role: app
+  instance-state-name: running
+
+hostnames:
+  - public-ip-address
+
+compose:
+  ansible_host: public_ip_address
+  ansible_user: ec2-user
+
+keyed_groups:
+  - key: tags.Role
+    prefix: role
