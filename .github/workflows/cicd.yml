@@ -53,6 +53,14 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ssh"
           printf '%s\n' "${{ secrets.DEVOPSCICDDEVPRIVATEKEY }}" > "$RUNNER_TEMP/ssh/id_ed25519"
           chmod 600 "$RUNNER_TEMP/ssh/id_ed25519"
+      - name: Verify SSH key pair
+        run: |
+          echo "${{ secrets.SSH_PUBLIC_KEY }}" > "$RUNNER_TEMP/ssh/public_key"
+          ssh-keygen -y -f "$RUNNER_TEMP/ssh/id_ed25519" > "$RUNNER_TEMP/ssh/derived_public_key"
+          echo "Stored public key fingerprint:"
+          ssh-keygen -lf "$RUNNER_TEMP/ssh/public_key"
+          echo "Private key derived fingerprint:"
+          ssh-keygen -lf "$RUNNER_TEMP/ssh/derived_public_key"
       - name: Detect runner IP
         run: |
           IP="$(curl -fsSL https://checkip.amazonaws.com | tr -d '\n')"
