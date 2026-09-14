@@ -21,3 +21,16 @@ output "asg_name" {
 output "launch_template_id" {
   value = module.asg.launch_template_id
 }
+
+output "ecr_repository_url" {
+  value = module.ecr.repository_url
+}
+
+output "ecr_repository_name" {
+  value = module.ecr.repository_name
+}
+
+output "ecr_repository_arn" {
+  value = module.ecr.repository_arn
+}
+

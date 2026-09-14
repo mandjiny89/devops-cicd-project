@@ -46,3 +46,10 @@ module "asg" {
   max_size              = var.asg_max_size
   ssh_public_key        = var.ssh_public_key
 }
+
+module "ecr" {
+  source = "../../modules/ecr"
+
+  project_name = "devops-cicd-project"
+  environment  = "dev"
+}
