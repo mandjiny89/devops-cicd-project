@@ -50,9 +50,9 @@ jobs:
           allowed-account-ids: "861019856428"
       - name: Configure SSH key
         run: |
-        mkdir -p "$RUNNER_TEMP/ssh"
-        printf '%s\n' "${{ secrets.DEVOPSCICDDEVPRIVATEKEY }}" > "$RUNNER_TEMP/ssh/id_ed25519"
-        chmod 600 "$RUNNER_TEMP/ssh/id_ed25519"
+          mkdir -p "$RUNNER_TEMP/ssh"
+          printf '%s\n' "${{ secrets.DEVOPSCICDDEVPRIVATEKEY }}" > "$RUNNER_TEMP/ssh/id_ed25519"
+          chmod 600 "$RUNNER_TEMP/ssh/id_ed25519"
       - name: Detect runner IP
         run: |
           IP="$(curl -fsSL https://checkip.amazonaws.com | tr -d '\n')"
