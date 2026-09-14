@@ -30,7 +30,7 @@ jobs:
         run: ruff check .
       - name: Test
         working-directory: app
-        run: PYTHONPATH=, pytest -q
+        run: PYTHONPATH=. python -m pytest -q
       - name: Docker build validation
         run: docker build -t devops-cicd-project:test ./app
 
