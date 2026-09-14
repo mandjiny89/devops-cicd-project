@@ -71,6 +71,11 @@ jobs:
           echo "ECR_REPOSITORY=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_ENV"
           echo "ALB_DNS=$(terraform output -raw alb_dns_name)" >> "$GITHUB_ENV"
           echo "ASG_NAME=$(terraform output -raw asg_name)" >> "$GITHUB_ENV"
+      - name: Debug Terraform outputs
+        run: |
+          echo "ECR_REPOSITORY=$ECR_REPOSITORY"
+          echo "ALB_DNS=$ALB_DNS"
+          echo "ASG_NAME=$ASG_NAME"
       - name: Build and push ECR image
         run: |
           REGISTRY="${ECR_REPOSITORY%/*}"
