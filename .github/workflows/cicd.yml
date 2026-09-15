@@ -1,159 +1,382 @@
 name: CI/CD
+
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose pipeline action"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - deploy
+          - destroy
+
+      confirm_destroy:
+        description: "Type DESTROY when using the destroy action"
+        required: false
+        type: string
+
 permissions:
   contents: read
   id-token: write
+
 concurrency:
   group: dev-cicd-${{ github.ref }}
   cancel-in-progress: false
 
+
 jobs:
+
+  # ============================================================
+  # CI
+  # Runs for PLAN and DEPLOY
+  # ============================================================
+
   ci:
+    if: ${{ inputs.action == 'plan' || inputs.action == 'deploy' }}
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v7
+
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: app/requirements-dev.txt
+
       - name: Install
         working-directory: app
         run: pip install -r requirements-dev.txt
+
       - name: Lint
         working-directory: app
         run: ruff check .
+
       - name: Test
         working-directory: app
         run: PYTHONPATH=. python -m pytest -q
+
       - name: Docker build validation
         run: docker build -t devops-cicd-project:test ./app
 
-  deploy:
-    if: github.event_name != 'pull_request'
+
+  # ============================================================
+  # TERRAFORM PLAN
+  # Runs only when PLAN is selected
+  # Does NOT change infrastructure
+  # ============================================================
+
+  plan:
+    if: ${{ inputs.action == 'plan' }}
     needs: ci
     runs-on: ubuntu-latest
+
     env:
       TF_VAR_ssh_public_key: ${{ secrets.DEVOPS_CICD_DEV_PUBLIC_KEY }}
+
     steps:
       - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::861019856428:role/devops-cicd-github-actions-role
+          aws-region: eu-west-2
+          role-session-name: github-actions-plan-dev
+          allowed-account-ids: "861019856428"
+
+      - name: Detect runner IP
+        run: |
+          IP="$(curl -fsSL https://checkip.amazonaws.com | tr -d '\n')"
+          echo "TF_VAR_github_runner_cidr=${IP}/32" >> "$GITHUB_ENV"
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.16.1"
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: terraform/environments/dev
+        run: terraform init -input=false
+
+      - name: Terraform format check
+        working-directory: terraform/environments/dev
+        run: terraform fmt -check -recursive ../..
+
+      - name: Terraform validate
+        working-directory: terraform/environments/dev
+        run: terraform validate
+
+      - name: Terraform plan
+        working-directory: terraform/environments/dev
+        run: terraform plan -input=false
+
+
+  # ============================================================
+  # DEPLOY
+  # Runs only when DEPLOY is selected
+  # Terraform apply + Docker + ECR + Ansible
+  # ============================================================
+
+  deploy:
+    if: ${{ inputs.action == 'deploy' }}
+    needs: ci
+    runs-on: ubuntu-latest
+
+    env:
+      TF_VAR_ssh_public_key: ${{ secrets.DEVOPS_CICD_DEV_PUBLIC_KEY }}
+
+    steps:
+      - uses: actions/checkout@v7
+
       - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::861019856428:role/devops-cicd-github-actions-role
           aws-region: eu-west-2
           role-session-name: github-actions-cicd-dev
           allowed-account-ids: "861019856428"
+
       - name: Configure SSH key
         run: |
           mkdir -p "$RUNNER_TEMP/ssh"
-          printf '%s\n' "${{ secrets.DEVOPSCICDDEVPRIVATEKEY }}" > "$RUNNER_TEMP/ssh/id_ed25519"
+          printf '%s\n' "${{ secrets.DEVOPSCICDDEVPRIVATEKEY }}" \
+            > "$RUNNER_TEMP/ssh/id_ed25519"
           chmod 600 "$RUNNER_TEMP/ssh/id_ed25519"
+
       - name: Verify SSH key pair
         run: |
-          printf '%s\n' "$TF_VAR_ssh_public_key" > "$RUNNER_TEMP/ssh/public_key"
+          printf '%s\n' "$TF_VAR_ssh_public_key" \
+            > "$RUNNER_TEMP/ssh/public_key"
+
           ssh-keygen -y \
             -f "$RUNNER_TEMP/ssh/id_ed25519" \
             > "$RUNNER_TEMP/ssh/derived_public_key"
+
           echo "Stored public key fingerprint:"
           ssh-keygen -lf "$RUNNER_TEMP/ssh/public_key"
+
           echo "Private key derived fingerprint:"
           ssh-keygen -lf "$RUNNER_TEMP/ssh/derived_public_key"
+
       - name: Detect runner IP
         run: |
           IP="$(curl -fsSL https://checkip.amazonaws.com | tr -d '\n')"
           echo "TF_VAR_github_runner_cidr=${IP}/32" >> "$GITHUB_ENV"
+
       - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: "1.16.1"
           terraform_wrapper: false
+
       - name: Terraform
         working-directory: terraform/environments/dev
         run: |
           terraform init -input=false
+
           terraform fmt -check -recursive ../..
+
           terraform validate
-          terraform plan -input=false -out=tfplan
-          terraform apply -input=false -auto-approve tfplan
-          echo "ECR_REPOSITORY=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_ENV"
-          echo "ALB_DNS=$(terraform output -raw alb_dns_name)" >> "$GITHUB_ENV"
-          echo "ASG_NAME=$(terraform output -raw asg_name)" >> "$GITHUB_ENV"
+
+          terraform plan \
+            -input=false \
+            -out=tfplan
+
+          terraform apply \
+            -input=false \
+            -auto-approve \
+            tfplan
+
+          echo "ECR_REPOSITORY=$(terraform output -raw ecr_repository_url)" \
+            >> "$GITHUB_ENV"
+
+          echo "ALB_DNS=$(terraform output -raw alb_dns_name)" \
+            >> "$GITHUB_ENV"
+
+          echo "ASG_NAME=$(terraform output -raw asg_name)" \
+            >> "$GITHUB_ENV"
+
       - name: Debug Terraform outputs
         run: |
           echo "ECR_REPOSITORY=$ECR_REPOSITORY"
           echo "ALB_DNS=$ALB_DNS"
           echo "ASG_NAME=$ASG_NAME"
+
       - name: Build and push ECR image
         run: |
           REGISTRY="${ECR_REPOSITORY%/*}"
-          aws ecr get-login-password --region eu-west-2 | docker login --username AWS --password-stdin "$REGISTRY"
-          docker build -t "$ECR_REPOSITORY:${GITHUB_SHA}" ./app
+
+          aws ecr get-login-password \
+            --region eu-west-2 |
+            docker login \
+              --username AWS \
+              --password-stdin "$REGISTRY"
+
+          docker build \
+            -t "$ECR_REPOSITORY:${GITHUB_SHA}" \
+            ./app
+
           docker push "$ECR_REPOSITORY:${GITHUB_SHA}"
-          echo "APP_IMAGE=$ECR_REPOSITORY:${GITHUB_SHA}" >> "$GITHUB_ENV"
-          echo "ECR_REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
+
+          echo "APP_IMAGE=$ECR_REPOSITORY:${GITHUB_SHA}" \
+            >> "$GITHUB_ENV"
+
+          echo "ECR_REGISTRY=$REGISTRY" \
+            >> "$GITHUB_ENV"
+
       - name: Wait for ASG instance refresh
         run: |
           echo "Checking ASG instance refresh: $ASG_NAME"
+
           REFRESH_ID="$(aws autoscaling describe-instance-refreshes \
             --auto-scaling-group-name "$ASG_NAME" \
             --query 'InstanceRefreshes[0].InstanceRefreshId' \
             --output text)"
+
           if [ -z "$REFRESH_ID" ] || [ "$REFRESH_ID" = "None" ]; then
             echo "No instance refresh found. Continuing."
             exit 0
           fi
+
           echo "Latest instance refresh: $REFRESH_ID"
+
           for i in {1..40}; do
+
             STATUS="$(aws autoscaling describe-instance-refreshes \
               --auto-scaling-group-name "$ASG_NAME" \
               --instance-refresh-ids "$REFRESH_ID" \
               --query 'InstanceRefreshes[0].Status' \
               --output text)"
+
             echo "Instance refresh status: $STATUS"
+
             case "$STATUS" in
+
               Successful)
                 echo "Instance refresh completed."
                 exit 0
                 ;;
+
               Failed|Cancelled|RollbackFailed)
                 echo "Instance refresh failed: $STATUS"
                 exit 1
                 ;;
+
             esac
+
             sleep 20
+
           done
+
           echo "Timed out waiting for instance refresh."
           exit 1
+
       - name: Install Ansible
         run: |
           python3 -m pip install --upgrade \
             ansible-core \
             "boto3>=1.35.0" \
             "botocore>=1.35.0"
+
           ansible-galaxy collection install amazon.aws
+
       - name: Dynamic inventory
         working-directory: ansible
         run: ansible-inventory --graph
+
       - name: Wait for SSH
         working-directory: ansible
         run: |
           for i in {1..20}; do
-            ansible role_app -m ping -u ec2-user --private-key "$RUNNER_TEMP/ssh/id_ed25519" && exit 0
+
+            ansible role_app \
+              -m ping \
+              -u ec2-user \
+              --private-key "$RUNNER_TEMP/ssh/id_ed25519" \
+              && exit 0
+
             sleep 15
+
           done
+
           exit 1
+
       - name: Deploy with Ansible
         working-directory: ansible
         run: |
-          ansible-playbook playbooks/deploy.yml -u ec2-user --private-key "$RUNNER_TEMP/ssh/id_ed25519"             -e "aws_region=eu-west-2" -e "ecr_registry=$ECR_REGISTRY"             -e "app_image=$APP_IMAGE" -e "app_environment=dev"
+          ansible-playbook \
+            playbooks/deploy.yml \
+            -u ec2-user \
+            --private-key "$RUNNER_TEMP/ssh/id_ed25519" \
+            -e "aws_region=eu-west-2" \
+            -e "ecr_registry=$ECR_REGISTRY" \
+            -e "app_image=$APP_IMAGE" \
+            -e "app_environment=dev"
+
       - name: Verify ALB
         run: |
           for i in {1..20}; do
-            curl -fsS "http://${ALB_DNS}/health" && echo && exit 0
+
+            curl -fsS "http://${ALB_DNS}/health" \
+              && echo \
+              && exit 0
+
             sleep 15
+
           done
+
           exit 1
+
+
+  # ============================================================
+  # DESTROY
+  # Runs only when DESTROY is selected AND confirmation = DESTROY
+  # ============================================================
+
+  destroy:
+    if: ${{ inputs.action == 'destroy' && inputs.confirm_destroy == 'DESTROY' }}
+    runs-on: ubuntu-latest
+
+    env:
+      TF_VAR_ssh_public_key: ${{ secrets.DEVOPS_CICD_DEV_PUBLIC_KEY }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::861019856428:role/devops-cicd-github-actions-role
+          aws-region: eu-west-2
+          role-session-name: github-actions-destroy-dev
+          allowed-account-ids: "861019856428"
+
+      - name: Detect runner IP
+        run: |
+          IP="$(curl -fsSL https://checkip.amazonaws.com | tr -d '\n')"
+          echo "TF_VAR_github_runner_cidr=${IP}/32" >> "$GITHUB_ENV"
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.16.1"
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: terraform/environments/dev
+        run: terraform init -input=false
+
+      - name: Terraform destroy plan
+        working-directory: terraform/environments/dev
+        run: |
+          terraform plan \
+            -destroy \
+            -input=false \
+            -out=destroy.tfplan
+
+      - name: Terraform destroy
+        working-directory: terraform/environments/dev
+        run: |
+          terraform apply \
+            -input=false \
+            -auto-approve \
+            destroy.tfplan
