@@ -27,6 +27,7 @@
   args:
     executable: /bin/bash
   changed_when: false
+  no_log: true
 
 - name: Pull application image
   ansible.builtin.command: docker pull {{ app_image }}
