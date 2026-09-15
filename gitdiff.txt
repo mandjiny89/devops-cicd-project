@@ -1,0 +1,24 @@
+diff --git a/gitdiff.txt b/gitdiff.txt
+index 998d7b9..e69de29 100644
+--- a/gitdiff.txt
++++ b/gitdiff.txt
+@@ -1,19 +0,0 @@
+-diff --git a/terraform/modules/alb/outputs.tf b/terraform/modules/alb/outputs.tf
+-index c7afd02..0d1a568 100644
+---- a/terraform/modules/alb/outputs.tf
+-+++ b/terraform/modules/alb/outputs.tf
+-@@ -5,3 +5,13 @@ output "alb_dns_name" {
+- output "target_group_arn" {
+-   value = aws_lb_target_group.app.arn
+- }
+-+
+-+output "alb_arn_suffix" {
+-+  description = "ARN suffix used by CloudWatch ALB metrics"
+-+  value       = aws_lb.this.arn_suffix
+-+}
+-+
+-+output "target_group_arn_suffix" {
+-+  description = "ARN suffix used by CloudWatch target group metrics"
+-+  value       = aws_lb_target_group.app.arn_suffix
+-+}
+-\ No newline at end of file
