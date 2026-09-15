@@ -57,12 +57,7 @@ resource "aws_launch_template" "app" {
     #!/bin/bash
     set -euxo pipefail
     dnf update -y
-    dnf install -y nginx python3
-    systemctl enable nginx
-    cat >/usr/share/nginx/html/index.html <<HTML
-    <html><body><h1>DevOps CI/CD Project</h1><p>Bootstrap node: $(hostname)</p></body></html>
-    HTML
-    systemctl start nginx
+    dnf install -y python3
   EOF
   )
 
