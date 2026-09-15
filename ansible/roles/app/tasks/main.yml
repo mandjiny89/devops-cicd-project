@@ -2,8 +2,16 @@
   ansible.builtin.dnf:
     name:
       - docker
-      - awscli2
     state: present
+
+- name: Check AWS CLI
+  ansible.builtin.command: aws --version
+  register: aws_cli_version
+  changed_when: false
+
+- name: Show AWS CLI version
+  ansible.builtin.debug:
+    var: aws_cli_version.stdout
 
 - name: Enable and start Docker
   ansible.builtin.service:
