@@ -50,6 +50,17 @@ module "asg" {
 module "ecr" {
   source = "../../modules/ecr"
 
-  project_name = "devops-cicd-project"
-  environment  = "dev"
+  project_name = var.project_name
+  environment  = var.environment
+}
+
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  project_name            = var.project_name
+  environment             = var.environment
+  alert_email             = var.alert_email
+  alb_arn_suffix          = module.alb.alb_arn_suffix
+  target_group_arn_suffix = module.alb.target_group_arn_suffix
+  asg_name                = module.asg.asg_name
 }
