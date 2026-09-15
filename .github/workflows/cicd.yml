@@ -97,30 +97,43 @@ jobs:
           echo "ECR_REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
       - name: Wait for ASG instance refresh
         run: |
-          echo "Waiting for ASG instance refresh: $ASG_NAME"
+          echo "Checking ASG instance refresh: $ASG_NAME"
+          REFRESH_ID="$(aws autoscaling describe-instance-refreshes \
+            --auto-scaling-group-name "$ASG_NAME" \
+            --query 'InstanceRefreshes[0].InstanceRefreshId' \
+            --output text)"
+          if [ -z "$REFRESH_ID" ] || [ "$REFRESH_ID" = "None" ]; then
+            echo "No instance refresh found. Continuing."
+            exit 0
+          fi
+          echo "Latest instance refresh: $REFRESH_ID"
           for i in {1..40}; do
             STATUS="$(aws autoscaling describe-instance-refreshes \
               --auto-scaling-group-name "$ASG_NAME" \
+              --instance-refresh-ids "$REFRESH_ID" \
               --query 'InstanceRefreshes[0].Status' \
               --output text)"
             echo "Instance refresh status: $STATUS"
-            if [ "$STATUS" = "Successful" ]; then
-              echo "Instance refresh completed successfully."
-              exit 0
-            fi
-            if [ "$STATUS" = "Failed" ] || \
-               [ "$STATUS" = "Cancelled" ] || \
-               [ "$STATUS" = "RollbackFailed" ]; then
-              echo "Instance refresh failed with status: $STATUS"
-              exit 1
-            fi
+            case "$STATUS" in
+              Successful)
+                echo "Instance refresh completed."
+                exit 0
+                ;;
+              Failed|Cancelled|RollbackFailed)
+                echo "Instance refresh failed: $STATUS"
+                exit 1
+                ;;
+            esac
             sleep 20
           done
-          echo "Timed out waiting for ASG instance refresh."
+          echo "Timed out waiting for instance refresh."
           exit 1
       - name: Install Ansible
         run: |
-          python3 -m pip install ansible-core boto3 botocore
+          python3 -m pip install --upgrade \
+            ansible-core \
+            "boto3>=1.35.0" \
+            "botocore>=1.35.0"
           ansible-galaxy collection install amazon.aws
       - name: Dynamic inventory
         working-directory: ansible
