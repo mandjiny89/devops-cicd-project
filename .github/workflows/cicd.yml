@@ -39,7 +39,7 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     env:
-      TF_VAR_ssh_public_key: ${{ secrets.devops_cicd_dev_public_key }}
+      TF_VAR_ssh_public_key: ${{ secrets.DEVOPS_CICD_DEV_PUBLIC_KEY }}
     steps:
       - uses: actions/checkout@v7
       - uses: aws-actions/configure-aws-credentials@v6
@@ -55,8 +55,10 @@ jobs:
           chmod 600 "$RUNNER_TEMP/ssh/id_ed25519"
       - name: Verify SSH key pair
         run: |
-          echo "${{ secrets.SSH_PUBLIC_KEY }}" > "$RUNNER_TEMP/ssh/public_key"
-          ssh-keygen -y -f "$RUNNER_TEMP/ssh/id_ed25519" > "$RUNNER_TEMP/ssh/derived_public_key"
+          printf '%s\n' "$TF_VAR_ssh_public_key" > "$RUNNER_TEMP/ssh/public_key"
+          ssh-keygen -y \
+            -f "$RUNNER_TEMP/ssh/id_ed25519" \
+            > "$RUNNER_TEMP/ssh/derived_public_key"
           echo "Stored public key fingerprint:"
           ssh-keygen -lf "$RUNNER_TEMP/ssh/public_key"
           echo "Private key derived fingerprint:"
