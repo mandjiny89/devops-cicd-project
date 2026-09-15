@@ -122,7 +122,7 @@ jobs:
       - name: Deploy with Ansible
         working-directory: ansible
         run: |
-          ansible-playbook playbooks/deploy.yml --private-key "$RUNNER_TEMP/ssh/id_ed25519"             -e "aws_region=eu-west-2" -e "ecr_registry=$ECR_REGISTRY"             -e "app_image=$APP_IMAGE" -e "app_environment=dev"
+          ansible-playbook playbooks/deploy.yml -u ec2-user --private-key "$RUNNER_TEMP/ssh/id_ed25519"             -e "aws_region=eu-west-2" -e "ecr_registry=$ECR_REGISTRY"             -e "app_image=$APP_IMAGE" -e "app_environment=dev"
       - name: Verify ALB
         run: |
           for i in {1..20}; do
