@@ -95,14 +95,28 @@ jobs:
           docker push "$ECR_REPOSITORY:${GITHUB_SHA}"
           echo "APP_IMAGE=$ECR_REPOSITORY:${GITHUB_SHA}" >> "$GITHUB_ENV"
           echo "ECR_REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
-      - name: Wait for ASG
+      - name: Wait for ASG instance refresh
         run: |
-          for i in {1..30}; do
-            COUNT="$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$ASG_NAME" --query 'AutoScalingGroups[0].Instances[?LifecycleState==`InService`]|length(@)' --output text)"
-            echo "InService: $COUNT"
-            [ "$COUNT" -ge 2 ] && exit 0
+          echo "Waiting for ASG instance refresh: $ASG_NAME"
+          for i in {1..40}; do
+            STATUS="$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "$ASG_NAME" \
+              --query 'InstanceRefreshes[0].Status' \
+              --output text)"
+            echo "Instance refresh status: $STATUS"
+            if [ "$STATUS" = "Successful" ]; then
+              echo "Instance refresh completed successfully."
+              exit 0
+            fi
+            if [ "$STATUS" = "Failed" ] || \
+               [ "$STATUS" = "Cancelled" ] || \
+               [ "$STATUS" = "RollbackFailed" ]; then
+              echo "Instance refresh failed with status: $STATUS"
+              exit 1
+            fi
             sleep 20
           done
+          echo "Timed out waiting for ASG instance refresh."
           exit 1
       - name: Install Ansible
         run: |
