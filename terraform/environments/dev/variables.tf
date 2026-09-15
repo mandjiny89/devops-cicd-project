@@ -56,3 +56,8 @@ variable "ssh_public_key" {
 variable "github_runner_cidr" {
   type = string
 }
+
+variable "alert_email" {
+  description = "Email address for monitoring alerts"
+  type        = string
+}
