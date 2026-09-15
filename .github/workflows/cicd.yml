@@ -76,6 +76,7 @@ jobs:
 
     env:
       TF_VAR_ssh_public_key: ${{ secrets.DEVOPS_CICD_DEV_PUBLIC_KEY }}
+      TF_VAR_alert_email: ${{ secrets.DEVOPS_ALERT_EMAIL }}
 
     steps:
       - uses: actions/checkout@v7

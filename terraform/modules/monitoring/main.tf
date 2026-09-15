@@ -15,12 +15,12 @@ resource "aws_sns_topic_subscription" "email" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
-  alarm_name          = "${var.project_name}-${var.environment}-alb-5xx"
-  alarm_description   = "ALB is returning HTTP 5xx errors"
+  alarm_name        = "${var.project_name}-${var.environment}-alb-5xx"
+  alarm_description = "ALB is returning HTTP 5xx errors"
 
-  namespace           = "AWS/ApplicationELB"
-  metric_name         = "HTTPCode_ELB_5XX_Count"
-  statistic           = "Sum"
+  namespace   = "AWS/ApplicationELB"
+  metric_name = "HTTPCode_ELB_5XX_Count"
+  statistic   = "Sum"
 
   period              = 300
   evaluation_periods  = 1
