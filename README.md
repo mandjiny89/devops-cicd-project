@@ -194,7 +194,7 @@ VPC
         └── Email Notification
 ```
 
-Terraform state is stored remotely in Amazon S3.
+Terraform state is stored remotely in Amazon S3. The backend bucket can be created and secured by selecting `bootstrap-backend` in the CI/CD workflow.
 
 ---
 
@@ -235,12 +235,122 @@ GitHub
 → Run workflow
 ```
 
-The workflow supports three actions:
+The workflow supports four actions:
 
 ```text
+bootstrap-backend
 plan
 deploy
 destroy
+```
+
+## First-Time AWS / GitHub Setup
+
+The normal pipeline does not use long-lived AWS access keys. GitHub Actions authenticates to AWS using OpenID Connect (OIDC).
+
+The one-time AWS resources required before the workflow can run are:
+
+```text
+GitHub OIDC provider:
+arn:aws:iam::861019856428:oidc-provider/token.actions.githubusercontent.com
+
+IAM role:
+arn:aws:iam::861019856428:role/devops-cicd-github-actions-role
+
+AWS region:
+eu-west-2
+```
+
+For this repository, GitHub's immutable OIDC subject is:
+
+```text
+repo:mandjiny89@35368639/devops-cicd-project@1364155953:ref:refs/heads/main
+```
+
+The IAM role trust relationship is:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::861019856428:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:mandjiny89@35368639/devops-cicd-project@1364155953:ref:refs/heads/main"
+        }
+      }
+    }
+  ]
+}
+```
+
+This OIDC provider and IAM role are bootstrap prerequisites because GitHub must already be able to authenticate to AWS before it can create AWS resources.
+
+### Required GitHub Secrets
+
+The current deployment also expects:
+
+```text
+DEVOPS_CICD_DEV_PUBLIC_KEY
+DEVOPSCICDDEVPRIVATEKEY
+DEVOPS_ALERT_EMAIL
+```
+
+AWS access-key and secret-access-key secrets are not required.
+
+## Bootstrap Terraform Backend
+
+The S3 backend is now automated through the same `CI/CD` workflow.
+
+For a new setup, navigate to:
+
+```text
+GitHub
+→ Actions
+→ CI/CD
+→ Run workflow
+→ action: bootstrap-backend
+```
+
+The bootstrap action calculates the deterministic bucket name:
+
+```text
+devops-cicd-project-tfstate-dev-861019856428-eu-west-2
+```
+
+It then creates the bucket if it does not already exist and enforces:
+
+```text
+S3 versioning
+AES-256 server-side encryption
+Block Public Access
+Bucket owner enforced
+```
+
+The operation is idempotent, so it is safe to run again. The backend bucket is deliberately kept outside the normal Terraform-managed infrastructure so a `destroy` operation does not destroy the state storage itself.
+
+Terraform uses native S3 state locking through:
+
+```hcl
+use_lockfile = true
+```
+
+No DynamoDB lock table is required.
+
+The normal first-time deployment order is:
+
+```text
+1. Configure the GitHub OIDC provider / IAM role in AWS
+2. Add the required GitHub secrets
+3. Run CI/CD → bootstrap-backend
+4. Run CI/CD → plan
+5. Run CI/CD → deploy
 ```
 
 ---

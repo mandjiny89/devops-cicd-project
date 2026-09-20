@@ -9,6 +9,7 @@ on:
         default: "plan"
         type: choice
         options:
+          - bootstrap-backend
           - plan
           - deploy
           - destroy
@@ -28,6 +29,83 @@ concurrency:
 
 
 jobs:
+
+  # ============================================================
+  # BOOTSTRAP TERRAFORM BACKEND
+  # Safe to run repeatedly. Creates/configures the remote-state
+  # S3 bucket but never deletes it.
+  # ============================================================
+
+  bootstrap-backend:
+    if: ${{ inputs.action == 'bootstrap-backend' }}
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: eu-west-2
+      AWS_ACCOUNT_ID: "861019856428"
+      PROJECT_NAME: devops-cicd-project
+      ENVIRONMENT: dev
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::861019856428:role/devops-cicd-github-actions-role
+          aws-region: eu-west-2
+          role-session-name: github-actions-bootstrap-backend
+          allowed-account-ids: "861019856428"
+
+      - name: Calculate backend bucket name
+        run: |
+          BUCKET="${PROJECT_NAME}-tfstate-${ENVIRONMENT}-${AWS_ACCOUNT_ID}-${AWS_REGION}"
+          echo "TF_STATE_BUCKET=$BUCKET" >> "$GITHUB_ENV"
+          echo "Terraform backend bucket: $BUCKET"
+
+      - name: Create or verify backend bucket
+        run: |
+          set -euo pipefail
+
+          if aws s3api head-bucket --bucket "$TF_STATE_BUCKET" 2>/dev/null; then
+            echo "Backend bucket already exists: $TF_STATE_BUCKET"
+          else
+            echo "Creating backend bucket: $TF_STATE_BUCKET"
+            aws s3api create-bucket \
+              --bucket "$TF_STATE_BUCKET" \
+              --region "$AWS_REGION" \
+              --create-bucket-configuration "LocationConstraint=$AWS_REGION"
+          fi
+
+          aws s3api put-public-access-block \
+            --bucket "$TF_STATE_BUCKET" \
+            --public-access-block-configuration \
+            'BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true'
+
+          aws s3api put-bucket-versioning \
+            --bucket "$TF_STATE_BUCKET" \
+            --versioning-configuration Status=Enabled
+
+          aws s3api put-bucket-encryption \
+            --bucket "$TF_STATE_BUCKET" \
+            --server-side-encryption-configuration \
+            '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"},"BucketKeyEnabled":false}]}'
+
+          aws s3api put-bucket-ownership-controls \
+            --bucket "$TF_STATE_BUCKET" \
+            --ownership-controls 'Rules=[{ObjectOwnership=BucketOwnerEnforced}]'
+
+      - name: Verify backend configuration
+        run: |
+          echo "Bucket: $TF_STATE_BUCKET"
+          aws s3api get-bucket-versioning --bucket "$TF_STATE_BUCKET"
+          aws s3api get-bucket-encryption --bucket "$TF_STATE_BUCKET"
+          aws s3api get-public-access-block --bucket "$TF_STATE_BUCKET"
+
+          EXPECTED_BUCKET="devops-cicd-project-tfstate-dev-861019856428-eu-west-2"
+          test "$TF_STATE_BUCKET" = "$EXPECTED_BUCKET"
+
+          echo "Terraform backend bootstrap completed successfully."
+
 
   # ============================================================
   # CI
