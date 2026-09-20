@@ -263,9 +263,20 @@ eu-west-2
 
 For this repository, GitHub's immutable OIDC subject is:
 
+### Find the GitHub Repository ID
+
+GitHub's OIDC subject for newer repositories can include the immutable
+GitHub owner ID and repository ID.
+
+Retrieve the repository information using:
+
+```bash
+curl -s https://api.github.com/repos/mandjiny89/devops-cicd-project | grep '"id"'
+
 ```text
 repo:mandjiny89@35368639/devops-cicd-project@1364155953:ref:refs/heads/main
 ```
+
 
 The IAM role trust relationship is:
 
