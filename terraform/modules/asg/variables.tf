@@ -12,3 +12,11 @@ variable "ssh_public_key" {
   type      = string
   sensitive = true
 }
+
+variable "aws_region" {
+  type = string
+}
+
+variable "ecr_repository_url" {
+  type = string
+}

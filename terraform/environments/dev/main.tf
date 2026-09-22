@@ -45,6 +45,8 @@ module "asg" {
   desired_capacity      = var.asg_desired_capacity
   max_size              = var.asg_max_size
   ssh_public_key        = var.ssh_public_key
+  aws_region            = var.aws_region
+  ecr_repository_url    = module.ecr.repository_url
 }
 
 module "ecr" {

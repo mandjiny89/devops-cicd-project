@@ -408,6 +408,12 @@ jobs:
 
           exit 1
 
+      - name: Promote verified image to dev
+        run: |
+          docker tag "$APP_IMAGE" "$ECR_REPOSITORY:dev"
+          docker push "$ECR_REPOSITORY:dev"
+          echo "Promoted verified image to $ECR_REPOSITORY:dev"
+
 
   # ============================================================
   # DESTROY
