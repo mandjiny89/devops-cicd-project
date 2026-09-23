@@ -63,6 +63,42 @@ resource "aws_launch_template" "app" {
     dnf update -y
     dnf install -y python3 docker
     systemctl enable --now docker
+    
+    # Install Node Exporter for host-level Prometheus metrics
+    NODE_EXPORTER_VERSION="1.9.1"
+
+    useradd --system --no-create-home --shell /sbin/nologin node_exporter || true
+
+    curl -L \
+      "https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz" \
+      -o /tmp/node_exporter.tar.gz
+
+    tar -xzf /tmp/node_exporter.tar.gz -C /tmp
+
+    install -m 0755 \
+      "/tmp/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter" \
+      /usr/local/bin/node_exporter
+
+    cat >/etc/systemd/system/node_exporter.service <<'NODE_EXPORTER_SERVICE'
+    [Unit]
+    Description=Prometheus Node Exporter
+    Wants=network-online.target
+    After=network-online.target
+
+    [Service]
+    User=node_exporter
+    Group=node_exporter
+    Type=simple
+    ExecStart=/usr/local/bin/node_exporter
+    Restart=on-failure
+    RestartSec=5s
+
+    [Install]
+    WantedBy=multi-user.target
+    NODE_EXPORTER_SERVICE
+
+    systemctl daemon-reload
+    systemctl enable --now node_exporter    
 
     ECR_REPOSITORY="${var.ecr_repository_url}"
     ECR_REGISTRY="$${ECR_REPOSITORY%/*}"
